@@ -1,0 +1,58 @@
+=========================================================
+      REPORTE ARIMAS - NORTE DE SANTANDER (UFPS)         
+      (Resultados formateados para COPIAR Y PEGAR)       
+=========================================================
+
+>> RESULTADOS PARA EL MODELO: ARIMA(1,1,0)
+Estadísticas de Bondad de Ajuste:
+AIC:      84.2316
+BIC:      86.9027
+RMSE:     2.1244
+MAE:      1.3285
+Ljung-Box (p-valor, 10 lags): 0.9632
+
+Estimación de Parámetros:
+Parámetro       | Valor (Coef) | p-valor   
+------------------------------------------
+Constante (c0)  | 0.074976     | 0.8787    
+phi 1 (AR1)     | -0.155995    | 0.2750    
+sigma2          | 4.512974     | 0.0000    
+
+==================================================
+
+>> RESULTADOS PARA EL MODELO: ARIMA(2,1,0)
+Estadísticas de Bondad de Ajuste:
+AIC:      85.4378
+BIC:      88.9993
+RMSE:     2.0734
+MAE:      1.3242
+Ljung-Box (p-valor, 10 lags): 0.9757
+
+Estimación de Parámetros:
+Parámetro       | Valor (Coef) | p-valor   
+------------------------------------------
+Constante (c0)  | 0.077382     | 0.8680    
+phi 1 (AR1)     | -0.185786    | 0.2638    
+phi 2 (AR2)     | -0.201099    | 0.3582    
+sigma2          | 4.298575     | 0.0000    
+
+==================================================
+
+>> RESULTADOS PARA EL MODELO: ARIMA(1,1,1)
+Estadísticas de Bondad de Ajuste:
+AIC:      82.8555
+BIC:      86.4170
+RMSE:     1.8930
+MAE:      1.1552
+Ljung-Box (p-valor, 10 lags): 0.9577
+
+Estimación de Parámetros:
+Parámetro       | Valor (Coef) | p-valor   
+------------------------------------------
+Constante (c0)  | 0.134213     | 0.6713    
+phi 1 (AR1)     | 0.450407     | 0.3719    
+theta 1 (MA1)   | -0.999390    | 0.9913    
+sigma2          | 3.343631     | 0.9912    
+
+==================================================
+
