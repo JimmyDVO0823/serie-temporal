@@ -30,12 +30,73 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 warnings.filterwarnings('ignore')
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 0. DATOS (Tasa de Desocupación – Norte de Santander – DANE GEIH 2007-2025)
+# 0. CARGA DE DATOS (Genérica desde CSV)
 # ─────────────────────────────────────────────────────────────────────────────
-years  = list(range(2007, 2026))
-td_raw = [10.2, 10.0, 10.3, 11.9, 12.1, 12.4, 12.8, 12.0,
-          12.1, 12.1, 12.0, 12.7, 13.9, 20.0, 14.5, 12.1,
-          11.4, 12.8, 11.3]
+
+def cargar_datos(ruta_archivo):
+    """
+    Carga años y Tasa de Desocupación (TD) desde un CSV de forma robusta.
+    Funciona incluso si hay metadatos al inicio o si el formato cambia ligeramente.
+    """
+    try:
+        # Leer el CSV tal cual está
+        df = pd.read_csv(ruta_archivo, header=None, encoding='utf-8')
+        
+        # 1. Identificar la fila de los años (contiene múltiples valores de 4 dígitos)
+        idx_anos = -1
+        for idx, row in df.iterrows():
+            linea = pd.to_numeric(row, errors='coerce')
+            anos_posibles = linea[(linea >= 2000) & (linea <= 2100)]
+            if len(anos_posibles) >= 5: # Umbral razonable para una serie temporal
+                idx_anos = idx
+                break
+        
+        if idx_anos == -1:
+            raise ValueError("No se detectó la fila con los años (2007, 2008...).")
+            
+        # Extraer años
+        row_anos = df.iloc[idx_anos]
+        years = pd.to_numeric(row_anos, errors='coerce').dropna().astype(int).tolist()
+        n_years = len(years)
+
+        # 2. Identificar la fila de la Tasa de Desocupación (TD)
+        idx_td = -1
+        for idx, row in df.iterrows():
+            if "Tasa de Desocupación (TD)" in str(row[0]):
+                idx_td = idx
+                break
+        
+        if idx_td == -1:
+            # Búsqueda fallida, intentar con algo más simple
+            for idx, row in df.iterrows():
+                if "Desocupación" in str(row[0]):
+                    idx_td = idx
+                    break
+        
+        if idx_td == -1:
+            raise ValueError("No se encontró la fila con la etiqueta 'Tasa de Desocupación (TD)'.")
+
+        # Extraer valores y convertir formato (coma decimal a punto)
+        valores_crudos = df.iloc[idx_td, 1 : 1 + n_years]
+        values = []
+        for v in valores_crudos:
+            if isinstance(v, str):
+                v = v.replace(',', '.')
+            try:
+                values.append(float(v))
+            except:
+                values.append(np.nan)
+        
+        return years, values
+    except Exception as e:
+        print(f"⚠ Error cargando CSV: {e}")
+        print("  Usando datos internos de respaldo (Norte de Santander).")
+        return list(range(2007, 2026)), [10.2, 10.0, 10.3, 11.9, 12.1, 12.4, 12.8, 12.0,
+                                         12.1, 12.1, 12.0, 12.7, 13.9, 20.0, 14.5, 12.1,
+                                         11.4, 12.8, 11.3]
+
+CSV_PATH = 'serie.csv'
+years, td_raw = cargar_datos(CSV_PATH)
 
 y  = np.array(td_raw)
 wt = np.diff(y)           # serie diferenciada  Wt = Yt − Yt−1
