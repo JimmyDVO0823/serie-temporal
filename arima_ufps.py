@@ -15,7 +15,7 @@ MEJORAS respecto al script original:
   6. Reporte ampliado con conclusión explícita sobre el mejor modelo
 """
 
-import os, warnings
+import os, warnings, argparse
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -30,79 +30,89 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 warnings.filterwarnings('ignore')
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 0. CARGA DE DATOS (Genérica desde CSV)
+# 0. CONFIGURACIÓN Y CARGA DE DATOS (CLI Universal)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def cargar_datos(ruta_archivo):
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Herramienta ARIMA Universal - UFPS Investigación de Operaciones')
+    parser.add_argument('--file', type=str, default='serie.csv', help='Ruta al archivo CSV')
+    parser.add_argument('--variable', type=str, default='Tasa de Desocupación (TD)', help='Nombre de la variable a analizar')
+    parser.add_argument('--steps', type=int, default=3, help='Años a pronosticar')
+    return parser.parse_args()
+
+def cargar_datos_universal(args):
     """
-    Carga años y Tasa de Desocupación (TD) desde un CSV de forma robusta.
-    Funciona incluso si hay metadatos al inicio o si el formato cambia ligeramente.
+    Carga cualquier variable de un CSV, detectando automáticamente años y filas.
     """
     try:
-        # Leer el CSV tal cual está
-        df = pd.read_csv(ruta_archivo, header=None, encoding='utf-8')
+        df = pd.read_csv(args.file, header=None, encoding='utf-8')
         
-        # 1. Identificar la fila de los años (contiene múltiples valores de 4 dígitos)
+        # 1. Detectar años
         idx_anos = -1
         for idx, row in df.iterrows():
             linea = pd.to_numeric(row, errors='coerce')
-            anos_posibles = linea[(linea >= 2000) & (linea <= 2100)]
-            if len(anos_posibles) >= 5: # Umbral razonable para una serie temporal
+            if len(linea[(linea >= 1900) & (linea <= 2100)]) >= 4:
                 idx_anos = idx
                 break
         
         if idx_anos == -1:
-            raise ValueError("No se detectó la fila con los años (2007, 2008...).")
-            
-        # Extraer años
-        row_anos = df.iloc[idx_anos]
-        years = pd.to_numeric(row_anos, errors='coerce').dropna().astype(int).tolist()
+            raise ValueError(f"No se detectó una fila de años coherente en {args.file}")
+        
+        years = pd.to_numeric(df.iloc[idx_anos], errors='coerce').dropna().astype(int).tolist()
         n_years = len(years)
 
-        # 2. Identificar la fila de la Tasa de Desocupación (TD)
-        idx_td = -1
+        # 2. Listar variables disponibles para ayudar al usuario
+        variables_disponibles = df[0].dropna().str.strip().tolist()
+        
+        # 3. Buscar la variable solicitada
+        target = args.variable.strip()
+        idx_var = -1
         for idx, row in df.iterrows():
-            if "Tasa de Desocupación (TD)" in str(row[0]):
-                idx_td = idx
+            if target.lower() in str(row[0]).lower():
+                idx_var = idx
                 break
         
-        if idx_td == -1:
-            # Búsqueda fallida, intentar con algo más simple
-            for idx, row in df.iterrows():
-                if "Desocupación" in str(row[0]):
-                    idx_td = idx
-                    break
-        
-        if idx_td == -1:
-            raise ValueError("No se encontró la fila con la etiqueta 'Tasa de Desocupación (TD)'.")
+        if idx_var == -1:
+            print(f"\n⚠ ERROR: No se encontró la variable '{target}'")
+            print("Variables detectadas en el archivo:")
+            for v in variables_disponibles:
+                if len(v) > 2: print(f"  • {v}")
+            print("\nUsa --variable \"Nombre Exacto\" para seleccionar una.")
+            exit(1)
 
-        # Extraer valores y convertir formato (coma decimal a punto)
-        valores_crudos = df.iloc[idx_td, 1 : 1 + n_years]
-        values = []
-        for v in valores_crudos:
-            if isinstance(v, str):
-                v = v.replace(',', '.')
-            try:
-                values.append(float(v))
-            except:
-                values.append(np.nan)
+        nombre_var = str(df.iloc[idx_var, 0]).strip()
+        valores_raw = df.iloc[idx_var, 1 : 1 + n_years]
         
-        return years, values
+        y = []
+        for v in valores_raw:
+            if isinstance(v, str): v = v.replace(',', '.')
+            try: y.append(float(v))
+            except: y.append(np.nan)
+            
+        y = np.array(y)
+        # Limpiar NaNs finales si la serie es más corta que el encabezado
+        mask = ~np.isnan(y)
+        y = y[mask]
+        years = np.array(years)[mask].tolist()
+        
+        return years, y, nombre_var
+
+    except FileNotFoundError:
+        print(f"⚠ ERROR: No se encontró el archivo '{args.file}'")
+        exit(1)
     except Exception as e:
-        print(f"⚠ Error cargando CSV: {e}")
-        print("  Usando datos internos de respaldo (Norte de Santander).")
-        return list(range(2007, 2026)), [10.2, 10.0, 10.3, 11.9, 12.1, 12.4, 12.8, 12.0,
-                                         12.1, 12.1, 12.0, 12.7, 13.9, 20.0, 14.5, 12.1,
-                                         11.4, 12.8, 11.3]
+        print(f"⚠ ERROR CRÍTICO: {e}")
+        exit(1)
 
-CSV_PATH = 'serie.csv'
-years, td_raw = cargar_datos(CSV_PATH)
+args = parse_arguments()
+years, y, VAR_NAME = cargar_datos_universal(args)
 
-y  = np.array(td_raw)
 wt = np.diff(y)           # serie diferenciada  Wt = Yt − Yt−1
 n  = len(y)
 
-OUT = 'resultados_arima'
+# Carpeta de resultados personalizada por variable
+VAR_CLEAN = VAR_NAME.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
+OUT = f'resultados_{VAR_CLEAN}'
 os.makedirs(OUT, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -185,8 +195,8 @@ LINEA = "=" * 60
 with open(os.path.join(OUT, 'reporte_modelos.txt'), 'w', encoding='utf-8') as f:
 
     f.write(LINEA + "\n")
-    f.write("  REPORTE ARIMA — TASA DE DESOCUPACIÓN\n")
-    f.write("  Norte de Santander (DANE-GEIH 2007-2025)\n")
+    f.write(f"  REPORTE ARIMA — {VAR_NAME.upper()}\n")
+    f.write(f"  Archivo: {args.file}\n")
     f.write("  UFPS · Investigación de Operaciones\n")
     f.write(LINEA + "\n\n")
 
@@ -269,15 +279,15 @@ with open(os.path.join(OUT, 'reporte_modelos.txt'), 'w', encoding='utf-8') as f:
     f.write("  shocks externos fuertes (COVID-19 en 2020).\n\n")
 
     # ── Pronóstico
-    fc    = mejor['res'].get_forecast(steps=3)
+    fc    = mejor['res'].get_forecast(steps=args.steps)
     p_mu  = fc.predicted_mean
     p_ci  = fc.conf_int(alpha=0.05)
-    anos_f = [2026, 2027, 2028]
+    anos_f = list(range(years[-1] + 1, years[-1] + 1 + args.steps))
 
     f.write(LINEA + "\n")
-    f.write(f"  PRONÓSTICO 2026–2028  ({mejor['nombre']})\n")
+    f.write(f"  PRONÓSTICO {anos_f[0]}–{anos_f[-1]}  ({mejor['nombre']})\n")
     f.write(LINEA + "\n\n")
-    f.write(f"  {'Año':>6}  {'Pronóstico (%)':>16}  {'LI 95%':>8}  {'LS 95%':>8}\n")
+    f.write(f"  {'Año':>6}  {'Pronóstico':>16}  {'LI 95%':>8}  {'LS 95%':>8}\n")
     f.write("  " + "-" * 44 + "\n")
     for a, mu, li, ls in zip(anos_f, p_mu, p_ci[:, 0], p_ci[:, 1]):
         f.write(f"  {a:>6}  {mu:>16.2f}  {li:>8.2f}  {ls:>8.2f}\n")
@@ -293,17 +303,17 @@ print("✓ Reporte generado")
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. CSV DE PRONÓSTICO
 # ─────────────────────────────────────────────────────────────────────────────
-fc    = mejor['res'].get_forecast(steps=3)
+fc    = mejor['res'].get_forecast(steps=args.steps)
 p_mu  = fc.predicted_mean
 p_ci  = fc.conf_int(alpha=0.05)
 
 pron_df = pd.DataFrame({
-    'Año':              [2026, 2027, 2028],
-    'Pronóstico (%)':  np.round(p_mu, 2),
+    'Año':             anos_f,
+    'Pronóstico':      np.round(p_mu, 2),
     'LI 95%':          np.round(p_ci[:, 0], 2),
     'LS 95%':          np.round(p_ci[:, 1], 2),
 })
-pron_df.to_csv(os.path.join(OUT, 'pronostico_2026_2028.csv'), index=False, encoding='utf-8')
+pron_df.to_csv(os.path.join(OUT, f'pronostico_{anos_f[0]}_{anos_f[-1]}.csv'), index=False, encoding='utf-8')
 print("✓ CSV pronóstico guardado")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -321,8 +331,8 @@ d      = mejor['orden'][1]
 
 fig = plt.figure(figsize=(16, 14), facecolor='white')
 fig.suptitle(
-    f"Análisis ARIMA — Tasa de Desocupación (TD) Norte de Santander\n"
-    f"Mejor modelo: {mejor['nombre']} | Fuente: DANE-GEIH 2007–2025",
+    f"Análisis ARIMA — {VAR_NAME}\n"
+    f"Mejor modelo: {mejor['nombre']} | Fuente: {args.file} ({years[0]}–{years[-1]})",
     fontsize=14, fontweight='bold', color=AZUL, y=0.98
 )
 
@@ -338,19 +348,19 @@ ax1.plot(years[d:], fitted[d:], 's--', color=NARANJ, lw=1.8,
          markersize=4, label='Valores ajustados', zorder=2)
 
 # Pronóstico
-ax1.plot([2025, 2026, 2027, 2028],
+ax1.plot([years[-1]] + anos_f,
          [y[-1]] + list(np.round(p_mu, 2)),
-         's--', color=ROJO, lw=2, ms=7, label='Pronóstico 2026–2028', zorder=4)
-ax1.fill_between([2026, 2027, 2028], p_ci[:, 0], p_ci[:, 1],
+         's--', color=ROJO, lw=2, ms=7, label=f'Pronóstico {anos_f[0]}–{anos_f[-1]}', zorder=4)
+ax1.fill_between(anos_f, p_ci[:, 0], p_ci[:, 1],
                  color=ROJO, alpha=0.12, label='IC 95%')
 
 ax1.axvline(2020, color=GRIS, ls=':', lw=1.2, alpha=0.7)
 ax1.text(2020.1, y.max() - 0.5, 'COVID-19', color=GRIS, fontsize=8)
-ax1.set_title('Serie original Yt, valores ajustados y pronóstico', fontsize=11)
-ax1.set_ylabel('Tasa de Desocupación (%)')
-ax1.set_xlabel('Año')
+ax1.set_title(f'Serie original, valores ajustados y pronóstico ({VAR_NAME})', fontsize=11)
+ax1.set_ylabel('Valor')
+ax1.set_xlabel('Tiempo')
 ax1.legend(fontsize=9, loc='upper left')
-ax1.set_xlim(2006, 2029)
+ax1.set_xlim(years[0] - 1, anos_f[-1] + 1)
 ax1.grid(alpha=0.3)
 
 # Anotar diferencias ajustado vs real (ver el ajuste)
@@ -435,30 +445,30 @@ print("✓ Gráfica diagnóstica guardada")
 # ─────────────────────────────────────────────────────────────────────────────
 fig2, ax = plt.subplots(figsize=(12, 6), facecolor='white')
 
-ax.plot(years, y, 'o-', color=AZUL, lw=2, ms=7, label='Histórico (DANE-GEIH)', zorder=3)
-ax.plot([2025, 2026, 2027, 2028],
+ax.plot(years, y, 'o-', color=AZUL, lw=2, ms=7, label=f'Histórico ({args.file})', zorder=3)
+ax.plot([years[-1]] + anos_f,
         [y[-1]] + list(np.round(p_mu, 2)),
         's--', color=ROJO, lw=2.5, ms=8, label=f'Pronóstico {mejor["nombre"]}', zorder=4)
-ax.fill_between([2026, 2027, 2028], p_ci[:, 0], p_ci[:, 1],
+ax.fill_between(anos_f, p_ci[:, 0], p_ci[:, 1],
                 color=ROJO, alpha=0.12, label='Intervalo de confianza 95%')
 
 # Etiquetas en puntos de pronóstico
-for a, mu in zip([2026, 2027, 2028], p_mu):
-    ax.annotate(f'{mu:.1f}%', (a, mu), textcoords='offset points',
+for a, mu in zip(anos_f, p_mu):
+    ax.annotate(f'{mu:.1f}', (a, mu), textcoords='offset points',
                 xytext=(0, 10), ha='center', fontsize=9, color=ROJO, fontweight='bold')
 
 ax.axvline(2025.5, color=GRIS, ls=':', lw=1.2, alpha=0.6)
 ax.text(2025.55, y.min() + 0.3, '← Histórico  |  Pronóstico →',
         color=GRIS, fontsize=8.5)
 ax.set_title(
-    f'Proyección Tasa de Desocupación — Norte de Santander\n'
-    f'Modelo {mejor["nombre"]}  |  Fuente: DANE-GEIH 2007–2025',
+    f'Proyección {VAR_NAME}\n'
+    f'Modelo {mejor["nombre"]}  |  Fuente: {args.file}',
     fontsize=13, fontweight='bold', color=AZUL
 )
-ax.set_xlabel('Año', fontsize=11)
-ax.set_ylabel('Tasa de Desocupación (%)', fontsize=11)
+ax.set_xlabel('Tiempo', fontsize=11)
+ax.set_ylabel('Valor', fontsize=11)
 ax.legend(fontsize=10, loc='upper left')
-ax.set_xlim(2006, 2030)
+ax.set_xlim(years[0]-1, anos_f[-1]+2)
 ax.set_ylim(max(0, p_ci[:, 0].min() - 1), p_ci[:, 1].max() + 1.5)
 ax.grid(alpha=0.3)
 
@@ -479,8 +489,8 @@ print(f"  RMSE = {mejor['rmse']:.4f}   MAE = {mejor['mae']:.4f}")
 print(f"  Ljung-Box p = {mejor['p_lb']:.4f}")
 print()
 print("  PRONÓSTICO:")
-for a, mu, li, ls in zip([2026,2027,2028], p_mu, p_ci[:,0], p_ci[:,1]):
-    print(f"    {a}: {mu:.2f}%  [IC 95%: {li:.2f} – {ls:.2f}]")
+for a, mu, li, ls in zip(anos_f, p_mu, p_ci[:,0], p_ci[:,1]):
+    print(f"    {a}: {mu:.2f}  [IC 95%: {li:.2f} – {ls:.2f}]")
 print("=" * 55)
 print()
 print("  Archivos generados en ./resultados_arima/")
