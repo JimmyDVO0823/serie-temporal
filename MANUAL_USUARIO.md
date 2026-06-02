@@ -1,64 +1,70 @@
-# Manual de Usuario - Herramienta ARIMA Universal (UFPS)
+# Manual de Usuario: Sistema de Análisis SARIMA - Metodología UFPS
 
-Esta herramienta automatiza el análisis econométrico de series temporales utilizando modelos ARIMA. Está diseñada para ser flexible y funcionar con cualquier conjunto de datos en formato CSV (por ejemplo, exportaciones del DANE-GEIH).
+Este proyecto provee una herramienta interactiva en Python para realizar análisis econométricos de series de tiempo trimestrales utilizando modelos SARIMAX (Metodología Box-Jenkins). Está especialmente diseñado para el análisis de la Tasa de Desocupación (TD) con rezagos estacionales.
 
-## 🚀 Requisitos Previos
+## 1. Estructura del Proyecto
 
-Asegúrate de tener instalado Python 3 y las siguientes librerías:
+El sistema está organizado de forma modular para facilitar su mantenimiento:
+
+*   **`arima_ufps_interactivo_corregido.py`**: El archivo principal (punto de entrada). Coordina la carga de datos, estimación y generación de reportes.
+*   **`data_loader.py`**: Gestiona la lectura de archivos (CSV, XLSX, XLS), la detección de formatos (vertical/horizontal) y los menús interactivos.
+*   **`econometric_engine.py`**: Contiene el motor de cálculo estadístico, las pruebas de estacionariedad (ADF), ACF/PACF y la selección del mejor modelo mediante el criterio AICc.
+*   **`results_manager.py`**: Encargado de exportar los resultados en formato texto, Excel profesional y generar los gráficos de diagnóstico y pronóstico.
+
+## 2. Requisitos Previos
+
+Asegúrate de tener instaladas las siguientes librerías de Python:
 
 ```bash
-pip install numpy pandas statsmodels matplotlib scikit-learn
+pip install numpy pandas matplotlib statsmodels scikit-learn openpyxl
 ```
 
-## 📊 Formato del Archivo CSV
+## 3. Modo de Uso
 
-El programa es inteligente y puede saltar metadatos, pero el CSV debe cumplir:
-1.  **Fila de Años**: Debe existir una fila con los años (ej. 2007, 2008...).
-2.  **Etiquetas de Fila**: La primera columna debe contener el nombre de la variable (ej. "Tasa de Desocupación (TD)").
-3.  **Separador decimal**: El programa acepta tanto puntos (`.`) como comas (`,`).
+### Ejecución Básica
+Para iniciar el asistente interactivo, ejecuta:
 
-## 🛠️ Cómo Usar el Programa
-
-Abre una terminal en la carpeta del proyecto y usa los siguientes comandos:
-
-### 1. Análisis por Defecto
-Analiza la "Tasa de Desocupación (TD)" en el archivo `serie.csv` por defecto:
 ```bash
-python arima_ufps.py
+python arima_ufps_interactivo_corregido.py
 ```
 
-### 2. Seleccionar una Variable Específica
-Usa el argumento `--variable` seguido del nombre (o parte del nombre) de la variable:
-```bash
-python arima_ufps.py --variable "Tasa de Ocupación"
-```
+### Argumentos de Línea de Comandos (Opcional)
+Puedes saltarte algunos pasos iniciales usando argumentos:
 
-### 3. Usar otro Archivo CSV
-Usa el argumento `--file` para especificar la ruta del archivo:
-```bash
-python arima_ufps.py --file "mis_datos.csv"
-```
+*   `--file ruta/al/archivo.csv`: Especifica el archivo de datos.
+*   `--steps N`: Define cuántos periodos trimestrales quieres proyectar (ej: 4).
 
-### 4. Ajustar el Tiempo de Pronóstico
-Usa el argumento `--steps` para definir cuántas unidades de tiempo (años) quieres proyectar:
-```bash
-python arima_ufps.py --variable "TGP" --steps 5
-```
+### Flujo Interactivo
+1.  **Selección de Archivo**: El script detectará automáticamente archivos compatibles en la carpeta.
+2.  **Selección de Variable**: Podrás elegir qué columna o variable deseas analizar.
+3.  **Configuración de Tiempo**: Selecciona cómo están organizados los periodos (Año, Trimestre, o ambos).
+4.  **Pasos de Pronóstico**: Indica cuántos trimestres hacia el futuro deseas predecir.
 
-### 💡 Ayuda con los Nombres
-Si no conoces el nombre exacto de la variable, escribe cualquier cosa y el programa te listará todas las opciones disponibles en el archivo:
-```bash
-python arima_ufps.py --variable "lista"
-```
+## 4. Resultados Generados
 
-## 📁 Resultados Generados
+Toda la salida se guarda en una carpeta dedicada llamada `resultados_[Nombre_de_la_Variable]`.
 
-Cada análisis crea una carpeta única (ej. `resultados_Tasa_de_Ocupación_TO/`) que contiene:
+### Archivos de Salida:
+1.  **`reporte_modelos.txt`**:
+    *   Resultados de las pruebas de estacionariedad (ADF).
+    *   Resumen de todos los modelos candidatos evaluados.
+    *   **Ecuación Matemática Formal**: Al final del archivo se muestra la ecuación Box-Jenkins (SARIMA 1,1,0 x 1,1,0_4) sustituyendo los coeficientes reales obtenidos.
+2.  **`reporte_econometrico_profesional.xlsx`**:
+    *   Un archivo Excel con diseño institucional (Azul Marino/Gris).
+    *   **Pestaña 1**: Resumen de coeficientes (Drift, Rezago Regular, Rezago Estacional) y métricas globales (AICc, RMSE, etc.).
+    *   **Pestaña 2**: Tabla detallada de pronósticos con intervalos de confianza al 95%.
+3.  **`grafico_diagnostico.png`**:
+    *   Visualización de la serie original y el ajuste.
+    *   Análisis de residuales (FAC de residuales para verificar Ruido Blanco).
+    *   FAC/FACP de la serie diferenciada.
+4.  **`grafico_pronostico.png`**:
+    *   Gráfica de la serie histórica con la proyección futura y su banda de incertidumbre.
+5.  **`pronostico_[Variable].csv`**:
+    *   Tabla simple con los valores numéricos de la predicción.
 
-1.  **`reporte_modelos.txt`**: Documento técnico con pruebas de estacionariedad (ADF), selección del mejor modelo (AICc) y pronóstico detallado.
-2.  **`pronostico_año_año.csv`**: Tabla de datos lista para importar a Excel.
-3.  **`grafico_diagnostico.png`**: Imagen con 4 paneles que validan la calidad del modelo y el ruido blanco de los residuales.
-4.  **`grafico_pronostico.png`**: Gráfica limpia del histórico y la proyección futura para presentaciones.
+## 5. Metodología Aplicada
 
----
-*Desarrollado para la cátedra de Investigación de Operaciones - UFPS*
+El script automatiza:
+*   La transformación de la serie mediante diferencias regulares ($d=1$) y estacionales ($D=1$).
+*   La estimación de parámetros para el modelo **SARIMA(1,1,0)x(1,1,0)4**.
+*   Validación estadística de los residuales mediante la prueba de Ljung-Box para asegurar que la estimación sea válida (Ruido Blanco).

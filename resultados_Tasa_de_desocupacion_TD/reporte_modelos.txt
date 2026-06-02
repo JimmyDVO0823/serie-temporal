@@ -1,0 +1,123 @@
+============================================================
+  REPORTE SARIMA ESTACIONAL — TASA DE DESOCUPACION (TD)
+  Archivo: Hoja de cálculo sin título.xlsx
+  Estructura Completa: [Y_t, Y_t-1, d=1, Y_t-4, D=1]
+============================================================
+
+── PRUEBA DE ESTACIONARIEDAD (ADF) ──────────────────────
+Serie Yt (Original): estadístico ADF = 0.3201 | p-valor = 0.9782
+  → NO estacionaria → Requiere diferencia regular (d=1)
+
+Serie Wt (Diff Regular): estadístico ADF = -1.5471 | p-valor = 0.5101
+  → Sugerencia: Revisar combinación con D=1
+
+── ACF / PACF DE Wt (límite ±0.409) ──────────────────
+  Lag        ACF     PACF  Significativo
+  1      +0.0907  +0.0948  ns
+  2      +0.1452  +0.1514  ns
+  3      -0.0520  -0.0898  ns
+  4      +0.3152  +0.3857  ns
+  5      -0.0722  -0.1859  ns
+  6      +0.0002  -0.0803  ns
+  7      -0.1286  -0.0907  ns
+  8      +0.1137  +0.0703  ns
+
+============================================================
+  ESTIMACIÓN DE MODELOS CANDIDATOS
+============================================================
+
+>> SARIMA(0,1,0)x(0,1,0)4
+--------------------------------------------------
+  AIC  = 37.9140
+  AICc = 38.4855
+  BIC  = 39.6948
+  RMSE = 0.6057
+  MAE  = 0.3976
+  Ljung-Box p-valor = 0.8375
+
+  Parámetros Estimados:
+  Parámetro               Coeficiente    p-valor  Signif.
+  -------------------------------------------------------
+  Intercepto / Drift (c)     0.088056     0.5526  ✗ No signif.
+  sigma2 (varianza error)     0.385281
+
+>> SARIMA(1,1,0)x(0,1,0)4
+--------------------------------------------------
+  AIC  = 39.4583
+  AICc = 40.6583
+  BIC  = 42.1294
+  RMSE = 0.5981
+  MAE  = 0.3732
+  Ljung-Box p-valor = 0.9349
+
+  Parámetros Estimados:
+  Parámetro               Coeficiente    p-valor  Signif.
+  -------------------------------------------------------
+  Intercepto / Drift (c)     0.073692     0.6180  ✗ No signif.
+  phi1  (AR regular lag 1 - Y_t-1)     0.158361     0.8364  ✗ No signif.
+  sigma2 (varianza error)     0.375655
+
+>> SARIMA(1,1,0)x(1,1,0)4
+--------------------------------------------------
+  AIC  = 26.2979
+  AICc = 28.4031
+  BIC  = 28.8541
+  RMSE = 0.7373
+  MAE  = 0.4425
+  Ljung-Box p-valor = 0.9526
+
+  Parámetros Estimados:
+  Parámetro               Coeficiente    p-valor  Signif.
+  -------------------------------------------------------
+  Intercepto / Drift (c)    -0.032813     0.8725  ✗ No signif.
+  phi1  (AR regular lag 1 - Y_t-1)     0.330566     0.4029  ✗ No signif.
+  Phi1 (SAR estacional lag 4 - Y_t-4)    -0.168547     0.8869  ✗ No signif.
+  sigma2 (varianza error)     0.216340
+
+>> SARIMA(1,1,1)x(1,1,1)4  ⚠ Unidades cerca del límite (descartado por invertibilidad)
+--------------------------------------------------
+  AIC  = 24.3522
+  AICc = 29.2934
+  BIC  = 27.7419
+  RMSE = 1.5368
+  MAE  = 0.7414
+  Ljung-Box p-valor = 0.9949
+
+  Parámetros Estimados:
+  Parámetro               Coeficiente    p-valor  Signif.
+  -------------------------------------------------------
+  Intercepto / Drift (c)    -0.087054     0.5274  ✗ No signif.
+  phi1  (AR regular lag 1 - Y_t-1)     0.907837     0.0381  ✓ Signif.
+  theta1 (MA regular lag 1)    -1.000018     0.9999  ✗ No signif.
+  Phi1 (SAR estacional lag 4 - Y_t-4)    -0.100466     0.9125  ✗ No signif.
+  Theta1 (SMA estacional lag 4)     1.000119     0.9999  ✗ No signif.
+  sigma2 (varianza error)     0.092858
+
+============================================================
+  SELECCIÓN DEL MEJOR MODELO ECONÓMETRICO
+============================================================
+
+  Criterio de decisión: Mínimo AICc (corregido para muestras pequeñas).
+
+  Ranking General:
+    1. SARIMA(1,1,0)x(1,1,0)4  AICc = 28.4031 ← SELECCIONADO
+    2. SARIMA(0,1,0)x(0,1,0)4  AICc = 38.4855
+    3. SARIMA(1,1,0)x(0,1,0)4  AICc = 40.6583
+
+  MODELO OPTIMIZADO EXECUTADO: SARIMA(1,1,0)x(1,1,0)4
+
+  PRONÓSTICO DE LA RED:
+       Periodo    Pronóstico        LI 95%        LS 95%
+  ------------------------------------------------------
+       2027 Q1          5.58          4.67          6.49
+       2027 Q2          4.96          3.44          6.47
+       2027 Q3          4.47          2.47          6.48
+
+============================================================
+  ECUACIÓN MATEMÁTICA DEL MODELO (Metodología Box-Jenkins)
+============================================================
+
+  ΔΔ4 TD_t = -0.0328 + 0.3306(ΔΔ4 TD_t-1) - 0.1685(ΔΔ4 TD_t-4)
+
+  Donde:
+  ΔΔ4 TD_t = (TD_t - TD_t-1) - (TD_t-4 - TD_t-5)
