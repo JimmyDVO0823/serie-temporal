@@ -647,6 +647,33 @@ def run_arima_analysis(data, steps):
         for a, mu, li, ls in zip(future_labels, p_mu, p_ci[:, 0], p_ci[:, 1]):
             f.write(f"  {str(a):>12}  {mu:>12.2f}  {li:>12.2f}  {ls:>12.2f}\n")
 
+        # --- ADICIÓN: ECUACIÓN MATEMÁTICA FORMAL (BOX-JENKINS) ---
+        f.write("\n" + LINEA + "\n")
+        f.write("  ECUACIÓN MATEMÁTICA DEL MODELO (Metodología Box-Jenkins)\n")
+        f.write(LINEA + "\n\n")
+        
+        # Obtener coeficientes para la ecuación del modelo SARIMA(1,1,0)x(1,1,0)4
+        params = mejor["res"].params
+        pnames = mejor["res"].param_names
+        
+        c = params[pnames.index("intercept")] if "intercept" in pnames else (params[pnames.index("const")] if "const" in pnames else 0.0)
+        phi1 = params[pnames.index("ar.L1")] if "ar.L1" in pnames else 0.0
+        Phi1 = params[pnames.index("ar.S.L4")] if "ar.S.L4" in pnames else 0.0
+        
+        def fmt_coef(val, name, first=False):
+            if val == 0: return ""
+            sign = "" if first else (" + " if val > 0 else " - ")
+            abs_val = abs(val) if not first else val
+            return f"{sign}{abs_val:.4f}{name}"
+
+        eq_rhs = f"{c:.4f}"
+        eq_rhs += fmt_coef(phi1, "(ΔΔ4 TD_t-1)")
+        eq_rhs += fmt_coef(Phi1, "(ΔΔ4 TD_t-4)")
+        
+        f.write(f"  ΔΔ4 TD_t = {eq_rhs}\n\n")
+        f.write("  Donde:\n")
+        f.write("  ΔΔ4 TD_t = (TD_t - TD_t-1) - (TD_t-4 - TD_t-5)\n")
+
     pron_df = pd.DataFrame({
         "Periodo": future_labels,
         "Pronóstico": np.round(p_mu, 2),
@@ -655,6 +682,79 @@ def run_arima_analysis(data, steps):
     })
     pron_path = os.path.join(out_dir, f"pronostico_{clean_name(variable_name)}.csv")
     pron_df.to_csv(pron_path, index=False, encoding="utf-8")
+
+    # --- ADICIÓN: EXCEL PROFESIONAL CON ESTILOS ---
+    try:
+        excel_path = os.path.join(out_dir, "reporte_econometrico_profesional.xlsx")
+        
+        # Preparar datos para Tabla 1: Resumen
+        res = mejor["res"]
+        pnames = res.param_names
+        params = res.params
+        
+        c_val = params[pnames.index("intercept")] if "intercept" in pnames else (params[pnames.index("const")] if "const" in pnames else 0.0)
+        phi1_val = params[pnames.index("ar.L1")] if "ar.L1" in pnames else 0.0
+        Phi1_val = params[pnames.index("ar.S.L4")] if "ar.S.L4" in pnames else 0.0
+        sigma2_val = params[pnames.index("sigma2")]
+        
+        resumen_data = [
+            ["Parámetro / Métrica", "Valor"],
+            ["Constante (Drift)", round(c_val, 6)],
+            ["Rezago Regular (Y_t-1)", round(phi1_val, 6)],
+            ["Rezago Estacional (Y_t-4)", round(Phi1_val, 6)],
+            ["Varianza del error (sigma2)", round(sigma2_val, 6)],
+            ["", ""],
+            ["AICc", round(mejor["aicc"], 4)],
+            ["BIC", round(mejor["bic"], 4)],
+            ["RMSE", round(mejor["rmse"], 4)],
+            ["p-valor Ljung-Box (Ruido Blanco)", round(mejor["p_lb"], 4)]
+        ]
+        df_resumen = pd.DataFrame(resumen_data[1:], columns=resumen_data[0])
+        
+        # Tabla 2: Pronósticos (ya tenemos pron_df)
+        
+        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+            df_resumen.to_excel(writer, sheet_name='Resumen Estimación', index=False)
+            pron_df.to_excel(writer, sheet_name='Tabla de Pronósticos', index=False)
+            
+            # Estilización con openpyxl
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            
+            azul_ufps = PatternFill(start_color='1A3A6B', end_color='1A3A6B', fill_type='solid')
+            gris_claro = PatternFill(start_color='F2F2F2', end_color='F2F2F2', fill_type='solid')
+            blanco_font = Font(color='FFFFFF', bold=True)
+            border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                           top=Side(style='thin'), bottom=Side(style='thin'))
+
+            for sheetname in writer.sheets:
+                ws = writer.sheets[sheetname]
+                # Estilo cabecera
+                for cell in ws[1]:
+                    cell.fill = azul_ufps
+                    cell.font = blanco_font
+                    cell.alignment = Alignment(horizontal='center')
+                    cell.border = border
+                
+                # Estilo cuerpo y auto-ajuste
+                for row_idx, row in enumerate(ws.iter_rows(min_row=2), 2):
+                    for cell in row:
+                        cell.border = border
+                        if row_idx % 2 == 0:
+                            cell.fill = gris_claro
+                
+                # Ajustar ancho de columnas
+                for column in ws.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except: pass
+                    ws.column_dimensions[column_letter].width = max_length + 5
+
+    except Exception as e:
+        print(f"Nota: No se pudo generar el Excel estilizado (requiere openpyxl): {e}")
 
     AZUL = "#1A3A6B"
     ROJO = "#C0392B"
