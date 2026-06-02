@@ -26,7 +26,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.stattools import adfuller, acf, pacf
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from sklearn.metrics import mean_squared_error, mean_absolute_error
@@ -354,9 +354,13 @@ def load_horizontal(path):
 
     y = normalize_numeric_series(df[chosen_series]).to_numpy(dtype=float)
 
-    if chosen_time == "Año + Trimestre":
-        years = pd.to_numeric(df[[c for c in cols if str(c).strip().lower() in {"año", "anio", "year"}][0]], errors="coerce")
-        quarters = df[[c for c in cols if str(c).strip().lower() in {"trimestre", "quarter"}][0]].astype(str)
+    year_cols = [c for c in cols if str(c).strip().lower() in {"año", "anio", "year"}]
+    quarter_cols = [c for c in cols if str(c).strip().lower() in {"trimestre", "quarter"}]
+
+    # Si el archivo trae año y trimestre, usamos una etiqueta anual-trimestral coherente.
+    if chosen_time == "Año + Trimestre" or (chosen_time.lower() in {"trimestre", "quarter"} and year_cols and quarter_cols):
+        years = pd.to_numeric(df[year_cols[0]], errors="coerce")
+        quarters = df[quarter_cols[0]].astype(str)
         time_labels = build_quarter_labels(years, quarters)
         time_mode = "quarter"
     elif chosen_time == "t":
@@ -364,11 +368,14 @@ def load_horizontal(path):
         tvals = pd.to_numeric(df[tcol], errors="coerce")
         time_labels = tvals.tolist()
         time_mode = "numeric"
-    elif chosen_time.lower() in {"año", "anio", "year"}:
-        ycol = [c for c in cols if str(c).strip().lower() in {"año", "anio", "year"}][0]
-        tvals = pd.to_numeric(df[ycol], errors="coerce")
+    elif chosen_time.lower() in {"año", "anio", "year"} and year_cols:
+        tvals = pd.to_numeric(df[year_cols[0]], errors="coerce")
         time_labels = tvals.tolist()
         time_mode = "year"
+    elif chosen_time.lower() in {"trimestre", "quarter"} and quarter_cols:
+        # Solo trimestre, sin año: se usa como etiqueta simple.
+        time_labels = df[quarter_cols[0]].astype(str).tolist()
+        time_mode = "index"
     else:
         time_labels = list(range(1, len(df) + 1))
         time_mode = "index"
@@ -377,7 +384,7 @@ def load_horizontal(path):
     y = y[mask]
     time_labels = [time_labels[i] for i in range(len(time_labels)) if mask[i]]
 
-    if chosen_time == "Año + Trimestre":
+    if time_mode == "quarter":
         years = years[mask].tolist()
         quarters = quarters[mask].tolist()
         time_labels = build_quarter_labels(years, quarters)
@@ -486,8 +493,15 @@ def run_arima_analysis(data, steps):
 
     for name, order, seasonal_order in models:
         try:
-            # Usamos trend="c" (drift estable) para evitar divergencias con la doble diferencia
-            res = ARIMA(y, order=order, seasonal_order=seasonal_order, trend="c").fit()
+            # SARIMAX sí soporta la estructura estacional (p,d,q) x (P,D,Q,s)
+            res = SARIMAX(
+                y,
+                order=order,
+                seasonal_order=seasonal_order,
+                trend="c",
+                enforce_stationarity=False,
+                enforce_invertibility=False,
+            ).fit(disp=False)
             k = len(res.params)
             denom = max(n - k - 1, 1)
             aicc = res.aic + (2 * k * (k + 1)) / denom
@@ -512,7 +526,9 @@ def run_arima_analysis(data, steps):
                     ma_ok = False
 
             fc_test = np.asarray(res.get_forecast(steps=min(steps, 3)).predicted_mean)
-            forecast_ok = np.all(np.isfinite(fc_test)) and (np.max(np.abs(fc_test)) <= scale * 5)
+            forecast_ok = np.all(np.isfinite(fc_test))
+            if forecast_ok and np.any(np.abs(fc_test) > scale * 50):
+                forecast_ok = False
 
             results.append({
                 "nombre": name,
@@ -540,7 +556,7 @@ def run_arima_analysis(data, steps):
         validos = [r for r in results if r.get("res") is not None and r.get("ma_ok", True)]
 
     if not validos:
-        raise RuntimeError("No se pudo estimar ningún modelo SARIMA válido.")
+        raise RuntimeError("No se pudo estimar ningún modelo SARIMA válido con estos datos.")
 
     mejor = min(validos, key=lambda x: x["aicc"])
 
@@ -552,6 +568,7 @@ def run_arima_analysis(data, steps):
     LINEA = "=" * 60
     # Mapeo econométrico adaptado a la teoría de Box-Jenkins
     mapping = {
+        "intercept": "Intercepto / Drift (c)",
         "const": "Intercepto / Drift (c)",
         "ar.L1": "phi1  (AR regular lag 1 - Y_t-1)",
         "ar.L2": "phi2  (AR regular lag 2)",
